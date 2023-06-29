@@ -8,10 +8,14 @@
 
 # 运行
 ##### 使用cpu运行
+```
 python run.py
+```
 ##### 使用gpu运行
 其中 --execution-threads=4 默认为8，显存较小的电脑可能无法支持
+```
 python run.py --execution-provider cuda --execution-threads=4
+```
 
 
 # 关闭NSFW屏蔽
