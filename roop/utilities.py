@@ -7,13 +7,13 @@ import ssl
 import subprocess
 import urllib
 from pathlib import Path
-from typing import List, Any
+from typing import List, Optional
 from tqdm import tqdm
 
 import roop.globals
 
-TEMP_FILE = 'temp.mp4'
 TEMP_DIRECTORY = 'temp'
+TEMP_VIDEO_FILE = 'temp.mp4'
 
 # monkey patch ssl for mac
 if platform.system().lower() == 'darwin':
@@ -21,7 +21,7 @@ if platform.system().lower() == 'darwin':
 
 
 def run_ffmpeg(args: List[str]) -> bool:
-    commands = ['ffmpeg', '-hide_banner', '-hwaccel', 'auto', '-loglevel', roop.globals.log_level]
+    commands = ['ffmpeg', '-hide_banner', '-loglevel', roop.globals.log_level]
     commands.extend(args)
     try:
         subprocess.check_output(commands, stderr=subprocess.STDOUT)
@@ -39,18 +39,26 @@ def detect_fps(target_path: str) -> float:
         return numerator / denominator
     except Exception:
         pass
-    return 30.0
+    return 30
 
 
-def extract_frames(target_path: str) -> None:
+def extract_frames(target_path: str, fps: float = 30) -> bool:
     temp_directory_path = get_temp_directory_path(target_path)
-    run_ffmpeg(['-i', target_path, '-pix_fmt', 'rgb24', os.path.join(temp_directory_path, '%04d.png')])
+    temp_frame_quality = roop.globals.temp_frame_quality * 31 // 100
+    return run_ffmpeg(['-hwaccel', 'auto', '-i', target_path, '-q:v', str(temp_frame_quality), '-pix_fmt', 'rgb24', '-vf', 'fps=' + str(fps), os.path.join(temp_directory_path, '%04d.' + roop.globals.temp_frame_format)])
 
 
-def create_video(target_path: str, fps: float = 30.0) -> None:
+def create_video(target_path: str, fps: float = 30) -> bool:
     temp_output_path = get_temp_output_path(target_path)
     temp_directory_path = get_temp_directory_path(target_path)
-    run_ffmpeg(['-r', str(fps), '-i', os.path.join(temp_directory_path, '%04d.png'), '-c:v', roop.globals.video_encoder, '-crf', str(roop.globals.video_quality), '-pix_fmt', 'yuv420p', '-vf', 'colorspace=bt709:iall=bt601-6-625:fast=1', '-y', temp_output_path])
+    output_video_quality = (roop.globals.output_video_quality + 1) * 51 // 100
+    commands = ['-hwaccel', 'auto', '-r', str(fps), '-i', os.path.join(temp_directory_path, '%04d.' + roop.globals.temp_frame_format), '-c:v', roop.globals.output_video_encoder]
+    if roop.globals.output_video_encoder in ['libx264', 'libx265', 'libvpx']:
+        commands.extend(['-crf', str(output_video_quality)])
+    if roop.globals.output_video_encoder in ['h264_nvenc', 'hevc_nvenc']:
+        commands.extend(['-cq', str(output_video_quality)])
+    commands.extend(['-pix_fmt', 'yuv420p', '-vf', 'colorspace=bt709:iall=bt601-6-625:fast=1', '-y', temp_output_path])
+    return run_ffmpeg(commands)
 
 
 def restore_audio(target_path: str, output_path: str) -> None:
@@ -62,7 +70,7 @@ def restore_audio(target_path: str, output_path: str) -> None:
 
 def get_temp_frame_paths(target_path: str) -> List[str]:
     temp_directory_path = get_temp_directory_path(target_path)
-    return glob.glob((os.path.join(glob.escape(temp_directory_path), '*.png')))
+    return glob.glob((os.path.join(glob.escape(temp_directory_path), '*.' + roop.globals.temp_frame_format)))
 
 
 def get_temp_directory_path(target_path: str) -> str:
@@ -73,11 +81,11 @@ def get_temp_directory_path(target_path: str) -> str:
 
 def get_temp_output_path(target_path: str) -> str:
     temp_directory_path = get_temp_directory_path(target_path)
-    return os.path.join(temp_directory_path, TEMP_FILE)
+    return os.path.join(temp_directory_path, TEMP_VIDEO_FILE)
 
 
-def normalize_output_path(source_path: str, target_path: str, output_path: str) -> Any:
-    if source_path and target_path:
+def normalize_output_path(source_path: str, target_path: str, output_path: str) -> Optional[str]:
+    if source_path and target_path and output_path:
         source_name, _ = os.path.splitext(os.path.basename(source_path))
         target_name, target_extension = os.path.splitext(os.path.basename(target_path))
         if os.path.isdir(output_path):
@@ -131,10 +139,10 @@ def conditional_download(download_directory_path: str, urls: List[str]) -> None:
     for url in urls:
         download_file_path = os.path.join(download_directory_path, os.path.basename(url))
         if not os.path.exists(download_file_path):
-            request = urllib.request.urlopen(url) # type: ignore[attr-defined]
+            request = urllib.request.urlopen(url)  # type: ignore[attr-defined]
             total = int(request.headers.get('Content-Length', 0))
             with tqdm(total=total, desc='Downloading', unit='B', unit_scale=True, unit_divisor=1024) as progress:
-                urllib.request.urlretrieve(url, download_file_path, reporthook=lambda count, block_size, total_size: progress.update(block_size)) # type: ignore[attr-defined]
+                urllib.request.urlretrieve(url, download_file_path, reporthook=lambda count, block_size, total_size: progress.update(block_size))  # type: ignore[attr-defined]
 
 
 def resolve_relative_path(path: str) -> str:
