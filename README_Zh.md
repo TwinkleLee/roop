@@ -1,5 +1,7 @@
 一个图片/视频换脸项目
 
+[英文说明](./README.md) | 中文说明
+
 # 安装
 1. python 3.10 `pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/`
 2. 下载ffmpeg，并将其`ffmpeg/bin`添加到系统环境变量
